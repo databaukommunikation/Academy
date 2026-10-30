@@ -116,8 +116,9 @@ p{margin:0}
 
 .doccard{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden;min-width:0;text-decoration:none;color:inherit;cursor:pointer;padding:0;text-align:left}
 .doccard:hover{border-color:var(--accent)}
-.doccard .thumb{aspect-ratio:4/3;background:var(--surface-2);display:grid;place-items:center;color:var(--muted);max-width:100%;overflow:hidden}
-.doccard .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.doccard .thumb{aspect-ratio:16/10;background:var(--surface-2);display:grid;place-items:center;color:var(--muted);max-width:100%;overflow:hidden;position:relative}
+.doccard .thumb .fbadge{position:absolute;left:8px;bottom:8px;background:var(--accent);color:var(--on-accent);font-family:var(--f-mono);font-size:11px;font-weight:600;padding:2px 7px;border-radius:5px}
+.doccard .thumb img{width:100%;height:100%;object-fit:cover;object-position:top;display:block}
 .doccard .thumb .ftype{font-family:var(--f-mono);font-size:13px;border:1.5px solid currentColor;border-radius:6px;padding:6px 10px}
 .doccard .meta{padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
 .doccard .meta b{font-weight:600;line-height:1.3;overflow-wrap:anywhere}
@@ -335,7 +336,8 @@ function articleRow(a){return `<button class="row" data-open="art:${a.id}"><div 
 function glRow(g){return `<div class="gl"><span class="term">${esc(g.term)}</span>${g.long?` <span class="long">${esc(g.long)}</span>`:""}<p>${esc(g.desc)}</p></div>`}
 function docCard(d){
   const isImg=(d.type||"").startsWith("image/"), isVid=(d.type||"").startsWith("video/");
-  const thumb=isImg?`<img src="${blob(d.asset)}" alt="" loading="lazy">`:`<span class="ftype">${isVid?"VIDEO":"PDF"}</span>`;
+  const prev=(d.images||[])[0], badge=isImg?"":`<span class="fbadge">${isVid?"VIDEO":"PDF"}</span>`;
+  const thumb=prev?`<img src="${blob(prev)}" alt="" loading="lazy">${badge}`:isImg?`<img src="${blob(d.asset)}" alt="" loading="lazy">`:`<span class="ftype">${isVid?"VIDEO":"PDF"}</span>`;
   const meta=`<div class="meta"><b>${esc(d.title)}</b><span>${esc(docCatName(d.cat))}${d.size?" · "+fmtSize(d.size):""}</span></div>`;
   if(isImg) return `<button class="doccard" data-zoom="${d.asset}" data-cap="${esc(d.title)}"><div class="thumb">${thumb}</div>${meta}</button>`;
   return `<a class="doccard" href="${esc(S.files[d.asset]||"#")}" target="_blank" rel="noopener"><div class="thumb">${thumb}</div>${meta}</a>`;
@@ -516,7 +518,7 @@ const BLANK={
   checklists:()=>({title:"",sum:"",items:[]}),
   courses:()=>({title:"",min:5,intro:"",qs:[{q:"",o:["","","",""],c:0,w:""}]}),
   glossary:()=>({term:"",long:"",desc:""}),
-  docs:()=>({title:"",cat:S.settings.docCats[0]?.id||"",note:"",asset:"",type:"",size:0})
+  docs:()=>({title:"",cat:S.settings.docCats[0]?.id||"",note:"",asset:"",type:"",size:0,images:[]})
 };
 const ROW={steps:()=>({t:"",d:""}),values:()=>({k:"",v:""}),qs:()=>({q:"",o:["","","",""],c:0,w:""}),cats:()=>({id:"",name:""}),docCats:()=>({id:"",name:""})};
 function openEditor(col,id){
@@ -581,7 +583,10 @@ function vEdit(){
       ${f("Notiz","note",d.note,{ph:"optional"})}
       <div class="field"><span>Datei</span>${has?`<div class="thumbs"><figure>${isImg?`<img src="${blob(d.asset)}" alt="">`:`<span class="val" style="display:grid;place-items:center;height:100%">${(d.type||"").includes("pdf")?"PDF":"Datei"}</span>`}</figure></div><small>${d.size?fmtSize(d.size):""}</small>`:""}
         <div>${CAP.assets?upl(has?"Datei ersetzen":"+ Datei wählen","application/pdf,image/*,video/mp4,video/webm",0,"doc"):`<span class="muted">Hochladen ist nur mit Admin-Anmeldung möglich.</span>`}</div>
-        <small>PDF, Bild oder Video, bis 50 MB.</small></div></div>`;
+        <small>PDF, Bild oder Video, bis 50 MB.</small></div>
+      <div class="field"><span>Vorschaubild (optional)</span>${(d.images||[])[0]?`<div class="thumbs"><figure><img src="${blob(d.images[0])}" alt=""><button class="ib del" aria-label="Vorschaubild entfernen" data-rmimg="0">✕</button></figure></div>`:""}
+        <div>${CAP.assets?upl((d.images||[])[0]?"Vorschaubild ersetzen":"+ Vorschaubild wählen","image/*",0,"thumb"):""}</div>
+        <small>Wird in der Unterlagen-Übersicht angezeigt.</small></div></div>`;
   }
   if(col==="settings"){
     const catRows=(arr,label)=>`<div class="fgroup"><h3>${label}</h3>${(d[arr]||[]).map((c,i)=>`<div class="optrow"><input class="in" id="f-${arr}-${i}" data-f="${arr}.${i}.name" value="${esc(c.name)}" placeholder="Name"><button class="ib" aria-label="Nach oben" data-amove="${arr}:${i}:-1" ${i===0?"disabled":""}>↑</button><button class="ib del" aria-label="Entfernen" data-arm="${arr}:${i}">✕</button></div>`).join("")}
@@ -610,6 +615,7 @@ async function uploadFiles(files,key){
       draft._added.push(t.path);
       try{Object.assign(S.files,await api("/api/files",{method:"POST",body:{paths:[t.path]}}))}catch(e){}
       if(key==="images") draft.images.push(t.path);
+      else if(key==="thumb"){ (draft.images||[]).forEach(p=>draft._removed.push(p)); draft.images=[t.path]; }
       else { if(draft.asset) draft._removed.push(draft.asset); draft.asset=t.path;draft.type=file.type;draft.size=file.size; if(!draft.title) draft.title=file.name.replace(/\.[^.]+$/,""); }
     }catch(e){toast(e.message,1)}
   }
